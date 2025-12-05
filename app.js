@@ -24,6 +24,12 @@ class SimpleConfigViewer {
         this.searchIndex = -1;
         this.searchResults = [];
         
+        // PWA安装相关变量
+        this.deferredPrompt = null;
+        this.userInteractionHandler = null;
+        
+        // 初始化PWA安装提示（尽早调用，确保事件监听器注册）
+        this.initInstallPrompt();
         // 初始化UI
         this.initUI();
         // 尝试自动授权
@@ -745,9 +751,6 @@ class SimpleConfigViewer {
             // 根据浏览器安全策略，无法自动恢复File System Access API授权
             // 每次页面刷新都需要重新授权
             this.showAuthorizationPrompt();
-            
-            // 初始化应用安装提示
-            this.initInstallPrompt();
         } catch (err) {
             console.error('初始化授权失败:', err);
             this.showAuthorizationPrompt();
@@ -840,78 +843,79 @@ class SimpleConfigViewer {
     
     // 初始化应用安装提示
     initInstallPrompt() {
-        // 检查是否已忽略安装提示
-        const hasDismissed = localStorage.getItem('installPromptDismissed') === 'true';
-        if (hasDismissed) return;
-        
         // 检查是否为Chrome内核浏览器
-        if (!this.isChromeBasedBrowser()) return;
+        const isChrome = this.isChromeBasedBrowser();
+        console.log(`PWA安装初始化 - Chrome内核浏览器: ${isChrome}`);
         
+        // 无论是否为Chrome内核，都添加事件监听以获取更多调试信息
         // 监听beforeinstallprompt事件，用于PWA安装
         window.addEventListener('beforeinstallprompt', (e) => {
+            console.log('检测到beforeinstallprompt事件');
             // 阻止Chrome 67及更早版本自动显示安装提示
             e.preventDefault();
             // 保存事件，以便稍后触发
             this.deferredPrompt = e;
             
-            // 等待用户与页面交互后再显示提示
-            this.setupUserInteractionListener();
+            console.log('保存的deferredPrompt:', this.deferredPrompt);
+            
+            // 立即显示安装提示，不等待用户交互
+            this.showInstallPrompt();
         });
         
         // 监听安装完成事件
         window.addEventListener('appinstalled', () => {
+            console.log('应用已安装');
             // 隐藏安装提示
             this.hideInstallPrompt();
             // 清除保存的安装事件
             this.deferredPrompt = null;
-            // 清除用户交互监听器
-            this.removeUserInteractionListener();
         });
+        
+        // 添加定期检查，确保安装提示在必要时显示
+        setTimeout(() => {
+            if (!this.deferredPrompt) {
+                console.log('未检测到beforeinstallprompt事件，可能是因为：');
+                console.log('1. 网站不是HTTPS（但localhost除外）');
+                console.log('2. 没有manifest.json或配置不正确');
+                console.log('3. 没有注册service worker');
+                console.log('4. 浏览器不支持PWA安装');
+                console.log('5. 用户已经安装了应用');
+            }
+        }, 5000);
     }
     
-    // 设置用户交互监听器
+    // 设置用户交互监听器（保留此方法以便将来扩展）
     setupUserInteractionListener() {
-        // 定义用户交互事件类型
-        const interactionEvents = ['click', 'touchstart', 'keydown', 'scroll', 'wheel'];
-        
-        // 交互处理函数
-        const handleInteraction = () => {
-            // 显示自定义安装提示
-            this.showInstallPrompt();
-            // 移除监听器，避免重复触发
-            this.removeUserInteractionListener();
-        };
-        
-        // 添加监听器
-        interactionEvents.forEach(event => {
-            window.addEventListener(event, handleInteraction, { once: true, passive: true });
-        });
-        
-        // 保存监听器引用
-        this.userInteractionHandler = handleInteraction;
+        // 这个方法现在不再需要，因为我们直接显示安装提示
+        console.log('用户交互监听器已设置');
     }
     
-    // 移除用户交互监听器
+    // 移除用户交互监听器（保留此方法以便将来扩展）
     removeUserInteractionListener() {
-        if (this.userInteractionHandler) {
-            // 定义用户交互事件类型
-            const interactionEvents = ['click', 'touchstart', 'keydown', 'scroll', 'wheel'];
-            
-            // 移除监听器
-            interactionEvents.forEach(event => {
-                window.removeEventListener(event, this.userInteractionHandler);
-            });
-            
-            // 清除引用
-            this.userInteractionHandler = null;
-        }
+        // 这个方法现在不再需要
+        console.log('用户交互监听器已移除');
     }
     
     // 显示安装提示
     showInstallPrompt() {
+        // 检查安装提示是否已被暂时忽略
+        const dismissedTime = localStorage.getItem('installPromptDismissed');
+        if (dismissedTime) {
+            const expirationTime = parseInt(dismissedTime);
+            if (Date.now() < expirationTime) {
+                console.log('安装提示已被暂时忽略');
+                return;
+            }
+            // 过期了，清除忽略状态
+            localStorage.removeItem('installPromptDismissed');
+        }
+        
         const installPrompt = document.getElementById('installPrompt');
         if (installPrompt) {
+            console.log('显示安装提示');
             installPrompt.classList.remove('hidden');
+        } else {
+            console.error('安装提示元素未找到');
         }
     }
     
@@ -925,19 +929,61 @@ class SimpleConfigViewer {
     
     // 处理安装事件
     async handleInstall() {
-        if (this.deferredPrompt) {
-            // 显示浏览器内置的安装提示
-            this.deferredPrompt.prompt();
+        try {
+            console.log('处理安装事件', { deferredPrompt: !!this.deferredPrompt });
             
-            // 等待用户响应
-            const { outcome } = await this.deferredPrompt.userChoice;
-            console.log(`User ${outcome} the install prompt`);
-            
-            // 清除保存的安装事件
-            this.deferredPrompt = null;
-            
-            // 隐藏自定义提示
-            this.hideInstallPrompt();
+            if (this.deferredPrompt) {
+                // 显示浏览器内置的安装提示
+                console.log('调用deferredPrompt.prompt()');
+                
+                try {
+                    // 现代浏览器：prompt()方法返回一个Promise，包含用户的选择结果
+                    const outcome = await this.deferredPrompt.prompt();
+                    console.log(`用户选择了: ${JSON.stringify(outcome)}`);
+                } catch (promptError) {
+                    console.warn('prompt()方法出错，尝试使用userChoice（旧API）:', promptError);
+                    
+                    // 旧浏览器兼容：使用userChoice API
+                    if (this.deferredPrompt.userChoice) {
+                        const { outcome } = await this.deferredPrompt.userChoice;
+                        console.log(`用户${outcome}了安装提示（旧API）`);
+                    } else {
+                        console.warn('无法获取用户选择结果');
+                    }
+                }
+                
+                // 清除保存的安装事件
+                this.deferredPrompt = null;
+                
+                // 隐藏自定义提示
+                this.hideInstallPrompt();
+            } else {
+                console.warn('没有可用的安装提示事件');
+                // 尝试检查浏览器的应用安装状态
+                if (window.matchMedia('(display-mode: standalone)').matches) {
+                    console.log('应用已经安装');
+                    this.hideInstallPrompt();
+                } else {
+                    // 可能是因为beforeinstallprompt事件没有触发
+                    console.log('无法显示安装提示，尝试检查PWA配置：');
+                    
+                    // 检查manifest.json是否存在
+                    fetch('manifest.json')
+                        .then(response => console.log('manifest.json响应:', response.status))
+                        .catch(error => console.log('无法加载manifest.json:', error));
+                        
+                    // 检查service worker是否已注册
+                    if (navigator.serviceWorker.controller) {
+                        console.log('Service Worker已激活');
+                    } else {
+                        console.log('Service Worker未激活');
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('安装过程中发生错误:', error);
+            // 显示错误信息给用户
+            this.showMessage('安装过程中发生错误，请重试', '安装错误');
         }
     }
     
@@ -945,8 +991,9 @@ class SimpleConfigViewer {
     handleDismissInstall() {
         // 隐藏安装提示
         this.hideInstallPrompt();
-        // 保存用户已忽略提示的状态
-        localStorage.setItem('installPromptDismissed', 'true');
+        // 保存用户已忽略提示的状态（设置为1小时后过期）
+        const expirationTime = Date.now() + 60 * 60 * 1000;
+        localStorage.setItem('installPromptDismissed', expirationTime.toString());
     }
 
     detectOperatingSystem() {

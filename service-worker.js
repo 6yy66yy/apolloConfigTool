@@ -54,8 +54,21 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     caches.match(event.request)
       .then((response) => {
-        // 如果缓存中有资源，返回缓存资源，否则从网络请求
-        return response || fetch(event.request);
+        // 如果缓存中有资源，返回缓存资源
+        if (response) {
+          return response;
+        }
+        // 否则从网络请求
+        return fetch(event.request)
+          .catch((error) => {
+            // 处理网络请求失败的情况
+            console.warn('Fetch failed for', event.request.url, ': ', error);
+            // 返回一个默认的错误响应
+            return new Response('Network error happened', {
+              status: 408,
+              headers: { 'Content-Type': 'text/plain' }
+            });
+          });
       })
   );
 });
