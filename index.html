@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>本地apollo配置编辑器</title>
     <link rel="stylesheet" href="styles.css">
-    <link rel="manifest" href="/manifest.json">
+    <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#4CAF50">
 </head>
 <body>
@@ -134,7 +134,7 @@
         // 注册Service Worker
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/service-worker.js')
+                navigator.serviceWorker.register('service-worker.js')
                     .then((registration) => {
                         console.log('Service Worker 注册成功:', registration.scope);
                     })
