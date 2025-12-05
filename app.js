@@ -847,6 +847,10 @@ class SimpleConfigViewer {
         const isChrome = this.isChromeBasedBrowser();
         console.log(`PWA安装初始化 - Chrome内核浏览器: ${isChrome}`);
         
+        // 获取浏览器信息
+        const browserInfo = this.parseBrowserInfo();
+        console.log(`当前浏览器: ${browserInfo.browserName} ${browserInfo.browserVersion}`);
+        
         // 无论是否为Chrome内核，都添加事件监听以获取更多调试信息
         // 监听beforeinstallprompt事件，用于PWA安装
         window.addEventListener('beforeinstallprompt', (e) => {
@@ -857,6 +861,7 @@ class SimpleConfigViewer {
             this.deferredPrompt = e;
             
             console.log('保存的deferredPrompt:', this.deferredPrompt);
+            console.log('deferredPrompt属性:', Object.keys(this.deferredPrompt));
             
             // 立即显示安装提示，不等待用户交互
             this.showInstallPrompt();
@@ -880,8 +885,63 @@ class SimpleConfigViewer {
                 console.log('3. 没有注册service worker');
                 console.log('4. 浏览器不支持PWA安装');
                 console.log('5. 用户已经安装了应用');
+                console.log('6. 浏览器需要更多的用户交互才能触发事件');
+                
+                // 检查manifest.json是否正确加载
+                fetch('manifest.json')
+                    .then(response => response.json())
+                    .then(manifest => {
+                        console.log('manifest.json内容:', manifest);
+                        console.log('manifest.json是否包含必要字段:', {
+                            name: !!manifest.name,
+                            short_name: !!manifest.short_name,
+                            start_url: !!manifest.start_url,
+                            display: !!manifest.display,
+                            icons: !!manifest.icons && manifest.icons.length > 0
+                        });
+                    })
+                    .catch(error => console.log('加载manifest.json失败:', error));
+                
+                // 检查Service Worker状态
+                if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.getRegistration()
+                        .then(registration => {
+                            console.log('Service Worker注册状态:', !!registration);
+                            if (registration) {
+                                console.log('Service Worker状态:', registration.active ? 'active' : 'inactive');
+                            }
+                        })
+                        .catch(error => console.log('获取Service Worker注册失败:', error));
+                }
+                
+                // 检查浏览器是否支持beforeinstallprompt事件
+                console.log('浏览器支持beforeinstallprompt事件:', 'onbeforeinstallprompt' in window);
             }
         }, 5000);
+        
+        // 为Edge浏览器添加特殊处理：在用户与页面交互后再次检查安装条件
+        const handleUserInteraction = () => {
+            console.log('用户与页面交互，检查PWA安装条件');
+            
+            if (!this.deferredPrompt) {
+                // 检查是否满足PWA安装条件
+                const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+                console.log('应用是否已安装:', isStandalone);
+                
+                // 如果应用未安装，尝试手动触发安装检查
+                if (!isStandalone) {
+                    console.log('应用未安装，检查浏览器是否满足PWA安装条件');
+                }
+            }
+            
+            // 只执行一次
+            document.removeEventListener('click', handleUserInteraction);
+            document.removeEventListener('touchstart', handleUserInteraction);
+        };
+        
+        // 在用户与页面交互后执行一次检查
+        document.addEventListener('click', handleUserInteraction);
+        document.addEventListener('touchstart', handleUserInteraction);
     }
     
     // 设置用户交互监听器（保留此方法以便将来扩展）
@@ -930,25 +990,63 @@ class SimpleConfigViewer {
     // 处理安装事件
     async handleInstall() {
         try {
-            console.log('处理安装事件', { deferredPrompt: !!this.deferredPrompt });
+            // 获取浏览器信息
+            const browserInfo = this.parseBrowserInfo();
+            console.log(`处理安装事件 (${browserInfo.browserName} ${browserInfo.browserVersion})`, { deferredPrompt: !!this.deferredPrompt });
             
             if (this.deferredPrompt) {
                 // 显示浏览器内置的安装提示
                 console.log('调用deferredPrompt.prompt()');
+                console.log('deferredPrompt属性:', Object.keys(this.deferredPrompt));
                 
                 try {
-                    // 现代浏览器：prompt()方法返回一个Promise，包含用户的选择结果
-                    const outcome = await this.deferredPrompt.prompt();
-                    console.log(`用户选择了: ${JSON.stringify(outcome)}`);
-                } catch (promptError) {
-                    console.warn('prompt()方法出错，尝试使用userChoice（旧API）:', promptError);
-                    
-                    // 旧浏览器兼容：使用userChoice API
-                    if (this.deferredPrompt.userChoice) {
-                        const { outcome } = await this.deferredPrompt.userChoice;
-                        console.log(`用户${outcome}了安装提示（旧API）`);
+                    // 为Edge浏览器添加特殊处理
+                    if (browserInfo.browserName.includes('Edge')) {
+                        console.log('Edge浏览器：添加特殊处理');
+                        
+                        // Edge浏览器可能需要直接调用prompt()而不等待Promise
+                        this.deferredPrompt.prompt();
+                        console.log('Edge浏览器：安装提示已显示');
+                        
+                        // 等待用户选择结果
+                        if (this.deferredPrompt.userChoice) {
+                            const { outcome } = await this.deferredPrompt.userChoice;
+                            console.log(`Edge浏览器：用户${outcome}了安装提示`);
+                            
+                            // 显示成功信息给用户
+                            if (outcome === 'accepted') {
+                                this.showMessage('安装请求已发送，请在浏览器弹出的提示中完成安装', '安装进行中');
+                            }
+                        } else {
+                            console.warn('Edge浏览器：无法获取用户选择结果');
+                        }
                     } else {
-                        console.warn('无法获取用户选择结果');
+                        // 其他浏览器：使用现代API
+                        try {
+                            // 现代浏览器：prompt()方法返回一个Promise，包含用户的选择结果
+                            const outcome = await this.deferredPrompt.prompt();
+                            console.log(`用户选择了: ${JSON.stringify(outcome)}`);
+                        } catch (promptError) {
+                            console.warn('prompt()方法出错，尝试使用userChoice（旧API）:', promptError);
+                            
+                            // 旧浏览器兼容：使用userChoice API
+                            if (this.deferredPrompt.userChoice) {
+                                const { outcome } = await this.deferredPrompt.userChoice;
+                                console.log(`用户${outcome}了安装提示（旧API）`);
+                            } else {
+                                console.warn('无法获取用户选择结果');
+                            }
+                        }
+                    }
+                } catch (promptError) {
+                    console.error('显示安装提示时发生错误:', promptError);
+                    
+                    // 针对Edge浏览器的特殊错误处理
+                    if (browserInfo.browserName.includes('Edge')) {
+                        console.log('Edge浏览器：尝试使用替代方法处理安装');
+                        alert('Edge浏览器：安装提示已显示，请在浏览器弹出的提示中完成安装');
+                    } else {
+                        throw promptError;
                     }
                 }
                 
@@ -959,6 +1057,7 @@ class SimpleConfigViewer {
                 this.hideInstallPrompt();
             } else {
                 console.warn('没有可用的安装提示事件');
+                
                 // 尝试检查浏览器的应用安装状态
                 if (window.matchMedia('(display-mode: standalone)').matches) {
                     console.log('应用已经安装');
@@ -978,12 +1077,26 @@ class SimpleConfigViewer {
                     } else {
                         console.log('Service Worker未激活');
                     }
+                    
+                    // 针对Edge浏览器的特殊提示
+                    if (browserInfo.browserName.includes('Edge')) {
+                        console.log('Edge浏览器：尝试刷新页面后再安装');
+                        this.showMessage('请刷新页面后再尝试安装应用', '安装提示');
+                    }
                 }
             }
         } catch (error) {
             console.error('安装过程中发生错误:', error);
-            // 显示错误信息给用户
-            this.showMessage('安装过程中发生错误，请重试', '安装错误');
+            console.log('错误信息:', error.message);
+            console.log('错误栈:', error.stack);
+            
+            // 针对不同浏览器显示不同的错误信息
+            const browserInfo = this.parseBrowserInfo();
+            if (browserInfo.browserName.includes('Edge')) {
+                this.showMessage('Edge浏览器安装失败，请尝试刷新页面后再试', '安装错误');
+            } else {
+                this.showMessage('安装过程中发生错误，请重试', '安装错误');
+            }
         }
     }
     
