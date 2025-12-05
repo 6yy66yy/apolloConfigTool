@@ -1,0 +1,49 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'apolloConfigTool/**'
+
+  # 允许从Actions选项卡手动运行此工作流
+  workflow_dispatch:
+
+# 设置GITHUB_TOKEN的权限，以便部署到GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 只允许并发运行一个部署作业，如果有新的推送，则取消当前正在运行的作业
+env:
+  DEPLOYMENT_DIRECTORY: apolloConfigTool
+
+jobs:
+  # 构建作业
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # 从项目的apolloConfigTool目录上传构建结果
+          path: ${{ env.DEPLOYMENT_DIRECTORY }}
+
+  # 部署作业
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

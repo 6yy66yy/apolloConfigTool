@@ -2,7 +2,7 @@
   "name": "本地Apollo配置编辑器",
   "short_name": "Apollo配置",
   "description": "本地Apollo配置编辑器，用于管理和修改Apollo配置文件",
-  "start_url": "/",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#4CAF50",
